@@ -1190,7 +1190,6 @@ async function adminCreateUser() {
   document.getElementById('admin-new-pin').value = '';
   document.getElementById('admin-new-role').value = 'teacher';
   renderAdminUsersTable();
-  showLogin();
   toast('✅ เพิ่มผู้ใช้เรียบร้อย');
 }
 
@@ -1246,7 +1245,6 @@ async function adminDeleteUser(teacherId) {
 
   delete db.teachers[teacherId];
   renderAdminUsersTable();
-  showLogin();
   toast('🗑️ ลบผู้ใช้เรียบร้อย');
 }
 
