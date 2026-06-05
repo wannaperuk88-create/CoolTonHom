@@ -447,12 +447,13 @@
       เฉพาะผู้ดูแลระบบเท่านั้นที่สามารถเพิ่ม ลบ แก้ไขชื่อ รีเซ็ต PIN และเปลี่ยนสิทธิ์ผู้ใช้งานได้
     </p>
 
-    <div style="background:var(--gray-light); padding:12px; border-radius:10px; margin-bottom:14px;">
-      <div class="form-row" style="grid-template-columns: 2fr 1fr 1fr;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label>ชื่อผู้ใช้ใหม่</label>
-          <input type="text" id="admin-new-name" placeholder="เช่น อ.สมหญิง ใจดี">
-        </div>
+    <div style="background:var(--gray-light); padding:14px; border-radius:12px; margin-bottom:16px;">
+      <div style="font-size:14px; font-weight:600; color:var(--green-dark); margin-bottom:10px;">➕ เพิ่มผู้ใช้ใหม่</div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label>ชื่อ-นามสกุล</label>
+        <input type="text" id="admin-new-name" placeholder="เช่น อ.สมหญิง ใจดี">
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
         <div class="form-group" style="margin-bottom:0;">
           <label>PIN (4 หลัก)</label>
           <input type="password" id="admin-new-pin" maxlength="4" placeholder="1234">
@@ -465,22 +466,10 @@
           </select>
         </div>
       </div>
-      <button class="btn btn-primary" onclick="adminCreateUser()">+ เพิ่มผู้ใช้</button>
+      <button class="btn btn-primary btn-block" onclick="adminCreateUser()">+ เพิ่มผู้ใช้</button>
     </div>
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>ชื่อ</th>
-            <th style="width:120px;">สิทธิ์</th>
-            <th style="width:120px;">PIN ใหม่</th>
-            <th style="width:160px;">จัดการ</th>
-          </tr>
-        </thead>
-        <tbody id="admin-users-body"></tbody>
-      </table>
-    </div>
+    <div id="admin-users-body"></div>
   </div>
 </div>
 
@@ -1217,26 +1206,44 @@ function renderAdminUsersTable() {
     const role = normalizeRole(t);
     const roomCount = Object.values(db.rooms).filter(r => r.teacherId === t.id).length;
     const canDelete = t.id !== currentTeacherId;
+    const isSelf = t.id === currentTeacherId;
+    const roleBadgeColor = role === 'admin' ? 'var(--green-dark)' : 'var(--text-muted)';
+    const roleBadgeBg = role === 'admin' ? 'var(--green-light)' : 'var(--gray-light)';
     return `
-      <tr>
-        <td>
-          <input type="text" id="admin-name-${t.id}" value="${t.name.replace(/"/g,'&quot;')}" style="padding:8px 10px;">
-          <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">ห้องในความดูแล: ${roomCount} ห้อง</div>
-        </td>
-        <td>
-          <select id="admin-role-${t.id}" style="padding:8px 10px;">
-            <option value="teacher" ${role === 'teacher' ? 'selected' : ''}>อาจารย์</option>
-            <option value="admin" ${role === 'admin' ? 'selected' : ''}>แอดมิน</option>
-          </select>
-        </td>
-        <td>
-          <input type="password" id="admin-pin-${t.id}" maxlength="4" value="${(t.pin || '').replace(/"/g,'&quot;')}" style="padding:8px 10px;">
-        </td>
-        <td style="white-space:nowrap;">
-          <button class="btn btn-primary btn-sm" onclick="adminSaveUser('${t.id}')">บันทึก</button>
-          <button class="btn btn-danger btn-sm" ${canDelete ? '' : 'disabled'} onclick="adminDeleteUser('${t.id}')">ลบ</button>
-        </td>
-      </tr>
+      <div style="border:1.5px solid var(--border); border-radius:12px; padding:14px; margin-bottom:10px; background:${isSelf ? 'var(--green-light)' : '#fff'};">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px;">
+          <div style="font-weight:600; font-size:15px; color:var(--text); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            ${isSelf ? '👤 ' : ''}${t.name}
+          </div>
+          <span style="flex-shrink:0; font-size:12px; font-weight:600; padding:3px 10px; border-radius:20px; background:${roleBadgeBg}; color:${roleBadgeColor};">
+            ${role === 'admin' ? '👑 แอดมิน' : 'อาจารย์'}
+          </span>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+          <div>
+            <label style="font-size:12px; color:var(--text-muted); margin-bottom:4px; display:block;">ชื่อ-นามสกุล</label>
+            <input type="text" id="admin-name-${t.id}" value="${t.name.replace(/"/g,'&quot;')}" style="font-size:15px;">
+          </div>
+          <div>
+            <label style="font-size:12px; color:var(--text-muted); margin-bottom:4px; display:block;">PIN (4 หลัก)</label>
+            <input type="password" id="admin-pin-${t.id}" maxlength="4" value="${(t.pin||'').replace(/"/g,'&quot;')}" style="font-size:15px;">
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <div style="flex:1; min-width:120px;">
+            <label style="font-size:12px; color:var(--text-muted); margin-bottom:4px; display:block;">สิทธิ์ผู้ใช้</label>
+            <select id="admin-role-${t.id}" style="font-size:15px;">
+              <option value="teacher" ${role==='teacher'?'selected':''}>อาจารย์</option>
+              <option value="admin" ${role==='admin'?'selected':''}>แอดมิน</option>
+            </select>
+          </div>
+          <div style="display:flex; gap:6px; padding-top:18px; flex-shrink:0;">
+            <button class="btn btn-primary" style="padding:10px 18px; font-size:14px;" onclick="adminSaveUser('${t.id}')">💾 บันทึก</button>
+            <button class="btn btn-danger" style="padding:10px 14px; font-size:14px;" ${canDelete?'':'disabled'} onclick="adminDeleteUser('${t.id}')">🗑️ ลบ</button>
+          </div>
+        </div>
+        <div style="font-size:12px; color:var(--text-muted); margin-top:8px;">ห้องในความดูแล: ${roomCount} ห้อง</div>
+      </div>
     `;
   }).join('');
 }
