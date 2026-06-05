@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>สแกนเช็คอิน</title>
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
     --green: #1D9E75; --green-light: #E1F5EE; --green-dark: #085041;
@@ -103,7 +104,7 @@
   <div style="color:var(--muted); font-size:16px;" id="suc-room"></div>
   
   <div class="success-card">
-    <div style="font-size:16px; color:var(--green-dark); font-weight:600">บันทึกเข้า Google Sheets เรียบร้อย</div>
+    <div style="font-size:16px; color:var(--green-dark); font-weight:600">บันทึกเข้าฐานข้อมูลเรียบร้อย ✅</div>
     <div style="font-size:15px; color:var(--green); margin-top:8px" id="suc-time"></div>
   </div>
   
@@ -111,17 +112,16 @@
 </div>
 
 <script>
+// =========== SUPABASE CLIENT ===========
+const SUPABASE_URL = 'https://fpkgbiselzdvikaidqgp.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZwa2diaXNlbHpkdmlrYWlkcWdwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwNTAyNDcsImV4cCI6MjA5NTYyNjI0N30.6Z5A2ecrkH7KFiehe5D8yFarL3QWEYvcKR7qfliFjpE';
+const _supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
 let params={}, students=[], attendance={}, selected=null;
 
-// ดึงพารามิเตอร์จาก URL ที่ฝังมาจาก QR Code
 function getParams() {
   const q = new URLSearchParams(window.location.search);
-  return { 
-    rid: q.get('rid'), 
-    date: q.get('date'), 
-    room: q.get('room'),
-    gasUrl: q.get('gas') 
-  };
+  return { rid: q.get('rid'), date: q.get('date'), room: q.get('room') };
 }
 
 function formatThaiDate(dateStr) {
@@ -139,57 +139,58 @@ function showError(msg) {
 
 async function init() {
   params = getParams();
-  
-  if(!params.rid || !params.date || !params.gasUrl) { 
-    showError('QR Code ไม่สมบูรณ์ หรืออาจารย์ยังไม่ได้ตั้งค่า Google Sheets'); 
-    return; 
+
+  if(!params.rid || !params.date) {
+    showError('QR Code ไม่สมบูรณ์ กรุณาให้อาจารย์สร้าง QR ใหม่อีกครั้ง');
+    return;
   }
 
   document.getElementById('date-label').textContent = formatThaiDate(params.date);
   const bar = document.getElementById('info-bar');
   bar.textContent = '🚪 ห้อง ' + (params.room || 'ไม่ระบุชื่อ');
-  
+
   try {
-    // ยิง API ไปหา Google Sheets เพื่อขอรายชื่อเด็กในห้องนี้
-    const res = await fetch(params.gasUrl, {
-      method: 'POST',
-      body: JSON.stringify({ action: 'getRoomData', rid: params.rid, date: params.date })
-    });
-    
-    const data = await res.json();
-    
-    if (data.students && data.students.length > 0) {
-      students = data.students;
-      attendance = data.attendance || {};
-      
-      bar.style.display = 'block';
-      document.getElementById('main-section').style.display = 'flex';
-      renderList(students);
-      document.getElementById('loading-screen').style.display = 'none';
-    } else {
-      showError('ไม่พบรายชื่อนักเรียนในฐานข้อมูล (อาจารย์ยังไม่ได้ซิงค์ข้อมูลขึ้น Cloud)');
+    const [{ data: stuData, error: stuErr }, { data: attData }] = await Promise.all([
+      _supabase.from('students').select('id, name, order_num').eq('room_id', params.rid).order('order_num'),
+      _supabase.from('attendance').select('student_id, status').eq('room_id', params.rid).eq('date', params.date)
+    ]);
+
+    if(stuErr) throw stuErr;
+
+    if(!stuData || stuData.length === 0) {
+      showError('ไม่พบรายชื่อนักเรียนในห้องนี้ กรุณาติดต่ออาจารย์');
+      return;
     }
+
+    students = stuData;
+    attendance = {};
+    (attData || []).forEach(row => { attendance[row.student_id] = row.status; });
+
+    bar.style.display = 'block';
+    document.getElementById('main-section').style.display = 'flex';
+    renderList(students);
+    document.getElementById('loading-screen').style.display = 'none';
   } catch(e) {
-    showError('ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วสแกนใหม่');
+    showError('ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่');
   }
 }
 
 function renderList(list) {
   const el = document.getElementById('student-list');
   if(!list.length) { el.innerHTML='<div class="empty">ไม่พบรายชื่อ</div>'; return; }
-  
+
   el.innerHTML = list.map((s) => {
     const realIndex = students.findIndex(x => x.id === s.id) + 1;
     const alreadyStatus = attendance[s.id];
     let badge = '';
-    
+
     if(alreadyStatus && alreadyStatus !== 'none') {
       badge = alreadyStatus === 'present' ? '<span class="already-badge">✅ เช็คแล้ว</span>' :
-              alreadyStatus === 'late' ? '<span class="already-badge" style="color:var(--amber)">⏰ สาย</span>' :
-              alreadyStatus === 'leave' ? '<span class="already-badge" style="color:var(--blue)">📝 ลา</span>' :
-              '<span class="already-badge" style="color:var(--red)">❌ ขาด</span>';
+              alreadyStatus === 'late'    ? '<span class="already-badge" style="color:var(--amber)">⏰ สาย</span>' :
+              alreadyStatus === 'leave'   ? '<span class="already-badge" style="color:var(--blue)">📝 ลา</span>' :
+                                           '<span class="already-badge" style="color:var(--red)">❌ ขาด</span>';
     }
-    
+
     return `<div class="student-item ${s.id===selected?'selected':''}" onclick="selectStudent('${s.id}')">
       <div class="student-num">${realIndex}</div>
       <span class="student-name">${s.name}${badge}</span>
@@ -218,41 +219,28 @@ async function doCheckin() {
   const btn = document.getElementById('checkin-btn');
   const spinner = document.getElementById('btn-spinner');
   const btnText = document.getElementById('btn-text');
-  
+
   btn.disabled = true;
   spinner.style.display = 'block';
   btnText.textContent = 'กำลังบันทึก...';
 
   try {
-    // ยิง API กลับไปบันทึกว่านักเรียนคนนี้มาเรียน
-    const res = await fetch(params.gasUrl, {
-      method: 'POST',
-      body: JSON.stringify({
-        action: 'checkin',
-        rid: params.rid,
-        roomName: params.room,
-        sid: student.id,
-        studentName: student.name,
-        date: params.date,
-        status: 'present'
-      })
-    });
-    
-    const result = await res.json();
-    if(result.success) {
-      const now = new Date();
-      document.getElementById('suc-name').textContent = student.name;
-      document.getElementById('suc-room').textContent = 'ห้อง ' + (params.room||'');
-      document.getElementById('suc-time').textContent = 'เวลาลงทะเบียน: ' + now.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}) + ' น.';
-      
-      document.getElementById('main-section').style.display = 'none';
-      document.getElementById('success-screen').style.display = 'flex';
-      
-      // อัปเดตสถานะเผื่อกดเช็คให้เพื่อนคนอื่นต่อ
-      attendance[selected] = 'present';
-    } else {
-      throw new Error('Save Failed');
-    }
+    const { error } = await _supabase.from('attendance').upsert(
+      { room_id: params.rid, student_id: selected, date: params.date, status: 'present', checkin_time: new Date().toISOString() },
+      { onConflict: 'student_id,date' }
+    );
+
+    if(error) throw error;
+
+    const now = new Date();
+    document.getElementById('suc-name').textContent = student.name;
+    document.getElementById('suc-room').textContent = 'ห้อง ' + (params.room || '');
+    document.getElementById('suc-time').textContent = 'เวลาลงทะเบียน: ' + now.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}) + ' น.';
+
+    document.getElementById('main-section').style.display = 'none';
+    document.getElementById('success-screen').style.display = 'flex';
+
+    attendance[selected] = 'present';
   } catch(e) {
     alert('บันทึกไม่สำเร็จ! กรุณาลองใหม่อีกครั้ง หรือตรวจสอบอินเทอร์เน็ต');
     btn.disabled = false;

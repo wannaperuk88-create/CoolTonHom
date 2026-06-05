@@ -6,6 +6,7 @@
 <title>ระบบเช็คชื่อเข้าแถว (สำหรับอาจารย์)</title>
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
     --green: #1D9E75; --green-light: #E1F5EE; --green-dark: #085041;
@@ -176,7 +177,6 @@
     
     <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
       <button class="btn btn-secondary btn-block" onclick="toggleRegister()">+ เพิ่มรายชื่ออาจารย์ใหม่</button>
-      <button class="btn btn-block" style="margin-top:8px; background:var(--amber); color:#fff; border:none;" onclick="injectMockData()">⚙️ สร้างข้อมูลจำลอง (Mock Data)</button>
     </div>
   </div>
 
@@ -233,10 +233,9 @@
     </div>
 
     <div style="display:flex; gap:8px; margin-bottom:1rem; flex-wrap:wrap;">
-      <button class="btn btn-primary" id="btn-create-qr" onclick="openQR()">📱 1. สร้าง QR ให้นักเรียนสแกน</button>
-      <button class="btn btn-secondary" onclick="pullDataFromSheets()">🔄 2. ดึงข้อมูลที่นักเรียนสแกน</button>
+      <button class="btn btn-primary" id="btn-create-qr" onclick="openQR()">📱 สร้าง QR ให้นักเรียนสแกน</button>
+      <button class="btn btn-secondary" id="btn-refresh-att" onclick="refreshAttendanceFromDB()">🔄 รีเฟรชข้อมูล</button>
       <button class="btn btn-secondary" style="margin-left:auto" onclick="markAll('present')">✅ เช็คมาทั้งหมด</button>
-      <button class="btn btn-secondary" onclick="saveToSheets()">💾 บันทึกที่ครูเช็คขึ้น Sheets</button>
     </div>
 
     <div class="card" style="padding:0;overflow:hidden">
@@ -364,19 +363,56 @@
     <button class="btn btn-primary" onclick="updateTeacherProfile()">อัปเดตข้อมูล</button>
   </div>
 
-  <div class="card" style="border-color:var(--gray); background: var(--gray-light);">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <div class="card-title" style="margin:0; color:var(--text-muted)">⚙️ ส่วนของผู้ดูแลระบบ (Admin)</div>
-      <button class="btn btn-secondary btn-sm" onclick="toggleAdminSettings()" id="btn-unlock-admin">🔐 ปลดล็อก</button>
+  <div class="card" style="border-color:var(--green); background: var(--green-light);">
+    <div class="card-title" style="color:var(--green-dark)">☁️ การเชื่อมต่อฐานข้อมูล Supabase</div>
+    <div id="db-status" style="font-size:14px; color:var(--green-dark); display:flex; align-items:center; gap:8px;">
+      <span id="db-status-dot" style="width:10px;height:10px;border-radius:50%;background:var(--gray);display:inline-block;"></span>
+      <span id="db-status-text">กำลังตรวจสอบ...</span>
     </div>
-    <div id="admin-settings-content" style="display:none; margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border);">
-      <div class="form-group">
-        <label style="color:var(--green-dark); font-weight:600;">URL ของ Web App (Google Apps Script)</label>
-        <input type="text" id="sheet-url" placeholder="https://script.google.com/macros/s/.../exec" onchange="saveGlobalSettings()">
+    <p style="font-size:13px; color:var(--text-muted); margin-top:8px;">
+      ข้อมูลทั้งหมดถูกบันทึกลง Supabase Cloud อัตโนมัติ
+    </p>
+  </div>
+
+  <div class="card" id="admin-users-card" style="display:none; border-top:4px solid var(--green);">
+    <div class="card-title">🛡️ จัดการรายชื่ออาจารย์และแอดมิน</div>
+    <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px;">
+      เฉพาะผู้ดูแลระบบเท่านั้นที่สามารถเพิ่ม ลบ แก้ไขชื่อ รีเซ็ต PIN และเปลี่ยนสิทธิ์ผู้ใช้งานได้
+    </p>
+
+    <div style="background:var(--gray-light); padding:12px; border-radius:10px; margin-bottom:14px;">
+      <div class="form-row" style="grid-template-columns: 2fr 1fr 1fr;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label>ชื่อผู้ใช้ใหม่</label>
+          <input type="text" id="admin-new-name" placeholder="เช่น อ.สมหญิง ใจดี">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>PIN (4 หลัก)</label>
+          <input type="password" id="admin-new-pin" maxlength="4" placeholder="1234">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>สิทธิ์</label>
+          <select id="admin-new-role">
+            <option value="teacher">อาจารย์</option>
+            <option value="admin">แอดมิน</option>
+          </select>
+        </div>
       </div>
-      <p style="font-size:13px; color:var(--text-muted);">
-        * เฉพาะ Admin เท่านั้นที่ควรแก้ไขค่านี้ เพื่อให้นักเรียนสแกนเช็คอินจากมือถือตัวเองได้
-      </p>
+      <button class="btn btn-primary" onclick="adminCreateUser()">+ เพิ่มผู้ใช้</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ชื่อ</th>
+            <th style="width:120px;">สิทธิ์</th>
+            <th style="width:120px;">PIN ใหม่</th>
+            <th style="width:160px;">จัดการ</th>
+          </tr>
+        </thead>
+        <tbody id="admin-users-body"></tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -397,21 +433,18 @@
 <div class="toast" id="toast"></div>
 
 <script>
-// =========== DATA STRUCTURE ===========
-let db = { 
-  teachers: {}, rooms: {}, attendance: {}, settings: { sheetUrl: '' } 
-};
+// =========== SUPABASE CLIENT ===========
+const SUPABASE_URL = 'https://fpkgbiselzdvikaidqgp.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZwa2diaXNlbHpkdmlrYWlkcWdwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwNTAyNDcsImV4cCI6MjA5NTYyNjI0N30.6Z5A2ecrkH7KFiehe5D8yFarL3QWEYvcKR7qfliFjpE';
+const _supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// =========== DATA STRUCTURE (in-memory cache) ===========
+let db = { teachers: {}, rooms: {}, attendance: {} };
 let currentTeacherId = null;
 let currentRoom = null;
 let currentPinInput = "";
 let activeRoomTabId = null;
 let currentReportTab = 'daily';
-
-function save() { localStorage.setItem('attend_db_v3', JSON.stringify(db)); }
-function load() {
-  const saved = localStorage.getItem('attend_db_v3');
-  if (saved) db = JSON.parse(saved);
-}
 function toast(msg, dur=2500) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('show');
@@ -429,73 +462,71 @@ function todayStr() {
 function currentMonthStr() {
   return todayStr().slice(0,7); // คืนค่า YYYY-MM
 }
+function isAdminUser(teacherId = currentTeacherId) {
+  const t = db.teachers[teacherId];
+  return !!t && (t.role === 'admin' || t.id === 't_admin');
+}
+function normalizeRole(teacher) {
+  if(!teacher) return 'teacher';
+  if(teacher.role === 'admin' || teacher.id === 't_admin') return 'admin';
+  return 'teacher';
+}
 
 // =========== INIT & LOGIN ===========
 document.getElementById('check-date').value = todayStr();
 document.getElementById('report-date').value = todayStr();
 document.getElementById('report-month').value = currentMonthStr();
 
-function initApp() {
-  load();
-  if(currentTeacherId && db.teachers[currentTeacherId]) showDashboard();
-  else showLogin();
+async function loadAllData() {
+  const [{ data: teachers }, { data: rooms }, { data: students }] = await Promise.all([
+    _supabase.from('teachers').select('*'),
+    _supabase.from('rooms').select('*').order('created_at'),
+    _supabase.from('students').select('*').order('order_num')
+  ]);
+
+  db.teachers = {};
+  (teachers || []).forEach(t => { db.teachers[t.id] = { ...t, role: normalizeRole(t) }; });
+
+  db.rooms = {};
+  (rooms || []).forEach(r => { db.rooms[r.id] = { id: r.id, teacherId: r.teacher_id, name: r.name, students: [] }; });
+
+  (students || []).forEach(s => { if(db.rooms[s.room_id]) db.rooms[s.room_id].students.push({ id: s.id, name: s.name }); });
 }
 
-function injectMockData() {
-  toast('กำลังสร้างข้อมูลจำลอง (ข้อมูลย้อนหลัง 5 วัน) ...');
-  setTimeout(() => {
-    db = { teachers: {}, rooms: {}, attendance: {}, settings: { sheetUrl: db.settings.sheetUrl } };
-    
-    db.teachers['t_admin'] = { id: 't_admin', name: 'แอดมิน (Admin)', pin: '1234' };
-    
-    const firstNames = ['สมชาย', 'สมหญิง', 'มานะ', 'มานี', 'ปิติ', 'ชูใจ', 'วีระ', 'เพชร', 'พลอย', 'ฟ้า', 'ตะวัน', 'วิน', 'น้ำ', 'ดิน', 'ไม้', 'ก้อง', 'กล้า', 'แก้ว', 'ขวัญ', 'เอก', 'นพ', 'ดาว', 'เดือน', 'เด่น', 'ชัย'];
-    const lastNames = ['ใจดี', 'รักเรียน', 'ขยันยิ่ง', 'มุ่งมั่น', 'สุขสันต์', 'พากเพียร', 'กล้าหาญ', 'รุ่งเรือง', 'สว่างวงศ์', 'ดีเลิศ', 'เจริญทรัพย์', 'มั่นคง', 'ยอดเยี่ยม', 'ประเสริฐ', 'บุญมา'];
-    
-    const statuses = ['present', 'present', 'present', 'present', 'present', 'present', 'late', 'absent', 'leave'];
-    
-    // สร้างวันที่ย้อนหลัง 5 วันสำหรับทำ Report รายเดือน
-    const datesToMock = [];
-    const d = new Date();
-    for(let k=0; k<5; k++) {
-      let tempD = new Date(d);
-      tempD.setDate(d.getDate() - k);
-      tempD.setMinutes(tempD.getMinutes() - tempD.getTimezoneOffset());
-      datesToMock.push(tempD.toISOString().slice(0,10));
-    }
+async function loadAttendanceForRoomDate(rid, dateStr) {
+  if(!db.attendance[rid]) db.attendance[rid] = {};
+  const { data } = await _supabase.from('attendance').select('student_id, status').eq('room_id', rid).eq('date', dateStr);
+  db.attendance[rid][dateStr] = {};
+  (data || []).forEach(row => { db.attendance[rid][dateStr][row.student_id] = row.status; });
+}
 
-    for (let i = 1; i <= 20; i++) {
-      let tId = 't_mock_' + i;
-      db.teachers[tId] = { id: tId, name: 'อาจารย์ทดสอบ ' + i, pin: '1234' }; 
-      let rId = 'r_mock_' + i;
-      let grade = Math.ceil(i / 4); 
-      let sub = ((i - 1) % 4) + 1;  
-      db.rooms[rId] = { id: rId, teacherId: tId, name: `ม.${grade}/${sub}`, students: [] };
-      
-      db.attendance[rId] = {};
-      
-      // กำหนดนักเรียน
-      for (let j = 1; j <= 20; j++) {
-        let rName = firstNames[Math.floor(Math.random() * firstNames.length)] + ' ' + lastNames[Math.floor(Math.random() * lastNames.length)];
-        let sId = 's_' + rId + '_' + j;
-        db.rooms[rId].students.push({ id: sId, name: rName });
-      }
-      
-      // สุ่มสถานะ 5 วันย้อนหลัง
-      datesToMock.forEach(dateStr => {
-        db.attendance[rId][dateStr] = {};
-        db.rooms[rId].students.forEach(stu => {
-          // มีโอกาส 80% ที่จะสุ่มสถานะ ถ้าไม่สุ่มคือถือว่าวันนั้นหยุด/ไม่มีการเช็ค
-          if(Math.random() < 0.8) {
-            db.attendance[rId][dateStr][stu.id] = statuses[Math.floor(Math.random() * statuses.length)];
-          }
-        });
-      });
-    }
-    
-    save(); currentTeacherId = null; currentPinInput = "";
-    showLogin(); 
-    toast('✅ สร้างข้อมูลสำเร็จ! ทดสอบดู Report รายเดือนได้เลย', 4000);
-  }, 500);
+async function loadAllAttendanceForRoom(rid) {
+  const { data } = await _supabase.from('attendance').select('student_id, date, status').eq('room_id', rid);
+  db.attendance[rid] = {};
+  (data || []).forEach(row => {
+    const d = typeof row.date === 'string' ? row.date : row.date.toString().slice(0,10);
+    if(!db.attendance[rid][d]) db.attendance[rid][d] = {};
+    db.attendance[rid][d][row.student_id] = row.status;
+  });
+}
+
+async function initApp() {
+  try {
+    await loadAllData();
+    setDbStatus(true);
+  } catch(e) {
+    setDbStatus(false);
+    toast('❌ เชื่อมต่อฐานข้อมูลไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต');
+  }
+  showLogin();
+}
+
+function setDbStatus(ok) {
+  const dot = document.getElementById('db-status-dot');
+  const txt = document.getElementById('db-status-text');
+  if(!dot) return;
+  dot.style.background = ok ? 'var(--green)' : 'var(--red)';
+  txt.textContent = ok ? 'เชื่อมต่อ Supabase สำเร็จ ✅' : 'ไม่สามารถเชื่อมต่อได้ ❌';
 }
 
 function showLogin() {
@@ -507,7 +538,7 @@ function showLogin() {
   const sel = document.getElementById('login-teacher-select');
   sel.innerHTML = '<option value="">-- กรุณาเลือกชื่อของคุณ --</option>';
   Object.values(db.teachers).forEach(t => {
-    sel.innerHTML += `<option value="${t.id}">${t.name}${t.id==='t_admin'?' 👑':''}</option>`;
+    sel.innerHTML += `<option value="${t.id}">${t.name}${isAdminUser(t.id)?' 👑':''}</option>`;
   });
   
   sel.onchange = (e) => {
@@ -530,14 +561,17 @@ function toggleRegister() {
   }
 }
 
-function registerTeacher() {
+async function registerTeacher() {
   const name = document.getElementById('reg-name').value.trim();
   const pin = document.getElementById('reg-pin').value.trim();
   if(!name || pin.length !== 4) return toast('กรุณาใส่ชื่อและ PIN 4 หลักให้ครบถ้วน');
-  
+
   const id = 't_' + Date.now();
-  db.teachers[id] = { id, name, pin };
-  save(); toast('ลงทะเบียนสำเร็จ!');
+  const { error } = await _supabase.from('teachers').insert({ id, name, pin, role: 'teacher' });
+  if(error) return toast('❌ ลงทะเบียนไม่สำเร็จ: ' + error.message);
+
+  db.teachers[id] = { id, name, pin, role: 'teacher' };
+  toast('ลงทะเบียนสำเร็จ!');
   document.getElementById('reg-name').value = '';
   document.getElementById('reg-pin').value = '';
   toggleRegister(); showLogin();
@@ -558,9 +592,11 @@ function updatePinDots() {
 }
 function verifyLogin() {
   const tid = document.getElementById('login-teacher-select').value;
-  if(db.teachers[tid].pin === currentPinInput) {
-    currentTeacherId = tid; 
-    toast(`ยินดีต้อนรับ ${db.teachers[tid].name}`); 
+  const teacher = db.teachers[tid];
+  if(!teacher) { toast('ไม่พบข้อมูลอาจารย์'); clearPin(); return; }
+  if(teacher.pin === currentPinInput) {
+    currentTeacherId = tid;
+    toast(`ยินดีต้อนรับ ${teacher.name}`);
     showDashboard();
   } else { toast('รหัส PIN ไม่ถูกต้อง!'); clearPin(); }
 }
@@ -577,7 +613,7 @@ function showDashboard() {
   document.getElementById('nav-teacher-name').textContent = "อ." + db.teachers[currentTeacherId].name;
   
   // ซ่อน/แสดง แท็บจัดการห้อง ถ้าเป็นแอดมินไม่ให้จัดการห้องคนอื่น เพื่อกันงง
-  if(currentTeacherId === 't_admin') {
+  if(isAdminUser()) {
      document.getElementById('tab-manage').style.display = 'none';
      toast('✨ เข้าระบบด้วยสิทธิ์ Admin (ดูรายงานได้ทุกห้อง)', 4000);
   } else {
@@ -587,27 +623,27 @@ function showDashboard() {
   showPage('check');
 }
 
-function showPage(name) {
+async function showPage(name) {
   if(!currentTeacherId) return;
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('page-'+name).classList.add('active');
-  
+
   const tabs = document.querySelectorAll('.nav-tab');
   tabs.forEach(t => { if(t.getAttribute('onclick').includes(name)) t.classList.add('active'); });
 
-  if(name==='check') { refreshRoomSelect('room-select'); refreshCheck(); }
-  if(name==='report') { refreshRoomSelect('report-room'); refreshReportView(); }
-  if(name==='manage') { 
+  if(name==='check') { refreshRoomSelect('room-select'); await refreshCheck(); }
+  if(name==='report') { refreshRoomSelect('report-room'); await refreshReportView(); }
+  if(name==='manage') {
     document.getElementById('manage-teacher-name').textContent = db.teachers[currentTeacherId].name;
-    renderRooms(); 
+    renderRooms();
   }
   if(name==='settings') loadSettingsPage();
 }
 
 // ฟังก์ชันหัวใจสำคัญ: Admin เห็นทุกห้อง, อาจารย์ทั่วไปเห็นแค่ห้องตัวเอง
 function getMyRooms() { 
-  if(currentTeacherId === 't_admin') {
+  if(isAdminUser()) {
     return Object.values(db.rooms); // คืนค่าห้องทั้งหมดในโรงเรียน
   }
   return Object.values(db.rooms).filter(r => r.teacherId === currentTeacherId); 
@@ -620,7 +656,7 @@ function refreshRoomSelect(selId) {
   
   let html = '<option value="">-- เลือกห้อง --</option>';
   
-  if(currentTeacherId === 't_admin') {
+  if(isAdminUser()) {
     // ถ้าเป็นแอดมิน จัดกลุ่มรายชื่อห้องตามอาจารย์ให้ดูง่าย
     const grouped = {};
     myRooms.forEach(r => {
@@ -643,29 +679,24 @@ function refreshRoomSelect(selId) {
   sel.innerHTML = html;
 }
 
-// =========== MANAGE ROOMS & AUTO-SYNC ===========
-async function autoSyncRoomToCloud(roomObj) {
-  const gasUrl = db.settings.sheetUrl;
-  if(!gasUrl) return; 
-  try {
-    const res = await fetch(gasUrl, { method: 'POST', body: JSON.stringify({ action: 'syncRoom', room: roomObj }) });
-  } catch(e) {}
-}
-
-function addRoom() {
+// =========== MANAGE ROOMS ===========
+async function addRoom() {
   const name = document.getElementById('new-room-name').value.trim();
   if(!name) return toast('กรุณาระบุชื่อห้องเรียน');
   const id = 'r' + Date.now();
+  const { error } = await _supabase.from('rooms').insert({ id, teacher_id: currentTeacherId, name });
+  if(error) return toast('❌ สร้างห้องไม่สำเร็จ: ' + error.message);
   db.rooms[id] = { id, teacherId: currentTeacherId, name, students: [] };
-  save(); activeRoomTabId = id; renderRooms(); 
-  document.getElementById('new-room-name').value='';
+  activeRoomTabId = id; renderRooms();
+  document.getElementById('new-room-name').value = '';
   toast(`สร้างห้อง ${name} สำเร็จ`);
-  autoSyncRoomToCloud(db.rooms[id]);
 }
 
-function deleteRoom(id) {
+async function deleteRoom(id) {
   if(!confirm('ยืนยันการลบห้องเรียนนี้? ข้อมูลนักเรียนทั้งหมดจะหายไป')) return;
-  delete db.rooms[id]; save(); 
+  const { error } = await _supabase.from('rooms').delete().eq('id', id);
+  if(error) return toast('❌ ลบห้องไม่สำเร็จ: ' + error.message);
+  delete db.rooms[id];
   if(activeRoomTabId === id) activeRoomTabId = null;
   renderRooms();
 }
@@ -728,36 +759,42 @@ function renderRooms() {
 
 async function bulkAddStudents(rid) {
   const textarea = document.getElementById('bulk-students-' + rid);
-  const lines = textarea.value.split('\n'); 
-  let addedCount = 0;
+  const lines = textarea.value.split('\n');
+  const newStudents = [];
+  const existingNames = new Set(db.rooms[rid].students.map(s => s.name));
+  let orderStart = db.rooms[rid].students.length;
 
-  lines.forEach(line => {
+  lines.forEach((line, idx) => {
     const name = line.trim();
-    if (name) { 
-      db.rooms[rid].students.push({ id: 's' + Date.now() + Math.random().toString(36).substring(2, 9), name: name });
-      addedCount++;
+    if(name && !existingNames.has(name)) {
+      newStudents.push({ id: 's' + Date.now() + Math.random().toString(36).slice(2,7), room_id: rid, name, order_num: orderStart + idx });
     }
   });
 
-  if (addedCount > 0) {
-    save(); renderRooms(); textarea.value = ''; toast(`✅ เพิ่มนักเรียน ${addedCount} คน เรียบร้อย!`);
-    await autoSyncRoomToCloud(db.rooms[rid]);
-  } else { toast('⚠️ กรุณาวางรายชื่อนักเรียนก่อนกดบันทึก'); }
+  if(newStudents.length === 0) return toast('⚠️ กรุณาวางรายชื่อนักเรียนก่อนกดบันทึก');
+
+  const { error } = await _supabase.from('students').insert(newStudents);
+  if(error) return toast('❌ เพิ่มนักเรียนไม่สำเร็จ: ' + error.message);
+
+  newStudents.forEach(s => db.rooms[rid].students.push({ id: s.id, name: s.name }));
+  renderRooms(); textarea.value = '';
+  toast(`✅ เพิ่มนักเรียน ${newStudents.length} คน เรียบร้อย!`);
 }
 
 async function deleteStudent(rid, sid) {
-  db.rooms[rid].students = db.rooms[rid].students.filter(s=>s.id!==sid);
-  save(); renderRooms();
-  await autoSyncRoomToCloud(db.rooms[rid]); 
+  const { error } = await _supabase.from('students').delete().eq('id', sid);
+  if(error) return toast('❌ ลบนักเรียนไม่สำเร็จ: ' + error.message);
+  db.rooms[rid].students = db.rooms[rid].students.filter(s => s.id !== sid);
+  renderRooms();
 }
 
 // =========== CHECK ATTENDANCE ===========
-function loadRoom() {
+async function loadRoom() {
   const rid = document.getElementById('room-select').value;
   currentRoom = rid ? db.rooms[rid] : null;
-  refreshCheck();
+  await refreshCheck();
 }
-function refreshCheck() {
+async function refreshCheck() {
   if(!currentRoom) {
     document.getElementById('check-empty').style.display='block';
     document.getElementById('check-content').style.display='none';
@@ -765,16 +802,32 @@ function refreshCheck() {
   }
   document.getElementById('check-empty').style.display='none';
   document.getElementById('check-content').style.display='block';
+  const dateStr = getSelectedDate('check-date');
+  await loadAttendanceForRoomDate(currentRoom.id, dateStr);
   renderStudentTable();
   updateStats();
 }
+async function refreshAttendanceFromDB() {
+  if(!currentRoom) return toast('กรุณาเลือกห้องก่อน');
+  const btn = document.getElementById('btn-refresh-att');
+  btn.disabled = true; btn.textContent = '⏳ กำลังโหลด...';
+  const dateStr = getSelectedDate('check-date');
+  await loadAttendanceForRoomDate(currentRoom.id, dateStr);
+  renderStudentTable(); updateStats();
+  btn.disabled = false; btn.textContent = '🔄 รีเฟรชข้อมูล';
+  toast('✅ อัปเดตข้อมูลสำเร็จ');
+}
 function getAtt(rid, sid, dateStr) { return (db.attendance[rid]?.[dateStr]?.[sid]) || 'none'; }
-function setAtt(rid, sid, status) {
+async function setAtt(rid, sid, status) {
   const dateStr = getSelectedDate('check-date');
   if(!db.attendance[rid]) db.attendance[rid]={};
   if(!db.attendance[rid][dateStr]) db.attendance[rid][dateStr]={};
   db.attendance[rid][dateStr][sid] = status;
-  save(); updateStats();
+  updateStats();
+  await _supabase.from('attendance').upsert(
+    { room_id: rid, student_id: sid, date: dateStr, status, checkin_time: new Date().toISOString() },
+    { onConflict: 'student_id,date' }
+  );
 }
 function renderStudentTable() {
   if(!currentRoom) return;
@@ -810,85 +863,36 @@ function updateStats() {
   document.getElementById('s-leave').textContent=lv;
   document.getElementById('s-total').textContent=currentRoom.students.length;
 }
-function markAll(status) {
+async function markAll(status) {
   if(!currentRoom) return;
-  currentRoom.students.forEach(s => setAtt(currentRoom.id, s.id, status));
-  renderStudentTable();
+  const dateStr = getSelectedDate('check-date');
+  if(!db.attendance[currentRoom.id]) db.attendance[currentRoom.id] = {};
+  if(!db.attendance[currentRoom.id][dateStr]) db.attendance[currentRoom.id][dateStr] = {};
+
+  const upsertRows = currentRoom.students.map(s => ({
+    room_id: currentRoom.id, student_id: s.id, date: dateStr, status, checkin_time: new Date().toISOString()
+  }));
+  await _supabase.from('attendance').upsert(upsertRows, { onConflict: 'student_id,date' });
+  currentRoom.students.forEach(s => { db.attendance[currentRoom.id][dateStr][s.id] = status; });
+  renderStudentTable(); updateStats();
+  toast(`✅ เช็คทุกคนเป็น "${status}" เรียบร้อย`);
 }
 
-// =========== CLOUD SYNC & QR CODE ===========
-async function openQR() {
+// =========== QR CODE ===========
+function openQR() {
   if(!currentRoom) return;
-  const gasUrl = db.settings.sheetUrl;
-  if(!gasUrl) return toast('⚠️ กรุณาไปที่ "ตั้งค่า" และให้ Admin ใส่ Google Sheets URL ก่อนสร้าง QR');
-
-  const btn = document.getElementById('btn-create-qr');
-  btn.disabled = true; btn.textContent = 'กำลังเตรียม QR...';
-  
-  try {
-    await fetch(gasUrl, { method: 'POST', body: JSON.stringify({ action: 'syncRoom', room: currentRoom }) });
-    toast('✅ พร้อมสแกนแล้ว');
-  } catch(e) {
-    toast('❌ ซิงค์ล้มเหลว ตรวจสอบ URL หรืออินเทอร์เน็ต');
-    btn.disabled = false; btn.textContent = '📱 1. สร้าง QR ให้นักเรียนสแกน';
-    return;
-  }
-
-  btn.disabled = false; btn.textContent = '📱 1. สร้าง QR ให้นักเรียนสแกน';
-
   const dateStr = getSelectedDate('check-date');
   const modal = document.getElementById('qr-modal');
   document.getElementById('qr-room-label').innerHTML = `ห้อง <strong>${currentRoom.name}</strong><br>ประจำวันที่ ${formatThaiDate(dateStr)}`;
   document.getElementById('qr-container').innerHTML = '';
-  
-  const base = window.location.origin + '/checkin.html';
-  const url = `${base}?rid=${currentRoom.id}&date=${dateStr}&room=${encodeURIComponent(currentRoom.name)}&gas=${encodeURIComponent(gasUrl)}`;
+
+  const base = window.location.origin + window.location.pathname.replace('index.html','') + 'checkin.html';
+  const url = `${base}?rid=${currentRoom.id}&date=${dateStr}&room=${encodeURIComponent(currentRoom.name)}`;
   new QRCode(document.getElementById('qr-container'), { text: url, width: 220, height: 220, colorDark:'#085041', colorLight:'#E1F5EE', correctLevel: QRCode.CorrectLevel.M });
   modal.classList.add('open');
+  toast('✅ QR พร้อมให้นักเรียนสแกนแล้ว');
 }
 function closeQR() { document.getElementById('qr-modal').classList.remove('open'); }
-
-async function pullDataFromSheets() {
-  if(!currentRoom) return toast('กรุณาเลือกห้องก่อน');
-  const gasUrl = db.settings.sheetUrl;
-  if(!gasUrl) return toast('ไม่พบ URL ฐานข้อมูลกลาง');
-
-  const dateStr = getSelectedDate('check-date');
-  toast('กำลังดึงข้อมูล...');
-  
-  try {
-    const res = await fetch(gasUrl, { method: 'POST', body: JSON.stringify({ action: 'getAttendance', rid: currentRoom.id, date: dateStr }) });
-    const liveAtt = await res.json(); 
-    
-    if(!db.attendance[currentRoom.id]) db.attendance[currentRoom.id] = {};
-    if(!db.attendance[currentRoom.id][dateStr]) db.attendance[currentRoom.id][dateStr] = {};
-    
-    Object.keys(liveAtt).forEach(sid => { db.attendance[currentRoom.id][dateStr][sid] = liveAtt[sid]; });
-    
-    save(); renderStudentTable(); updateStats(); toast('✅ อัปเดตข้อมูลสำเร็จ');
-  } catch(e) { toast('❌ ดึงข้อมูลไม่สำเร็จ'); }
-}
-
-async function saveToSheets() {
-  const url = db.settings.sheetUrl;
-  if(!url) return toast('กรุณาตั้งค่า Google Sheets URL ก่อน');
-  if(!currentRoom) return toast('กรุณาเลือกห้องก่อนทำรายการ');
-  
-  const dateStr = getSelectedDate('check-date');
-  const att = db.attendance[currentRoom.id]?.[dateStr]||{};
-  const teacher = db.teachers[currentRoom.teacherId];
-  
-  const rows = currentRoom.students.map(s => ({
-    date: dateStr, rid: currentRoom.id, roomName: currentRoom.name, 
-    sid: s.id, studentName: s.name, status: att[s.id]||'none', teacher: teacher?teacher.name:''
-  })).filter(r => r.status !== 'none'); 
-  
-  try {
-    toast('กำลังบันทึกข้อมูล...');
-    await fetch(url, { method:'POST', body:JSON.stringify({action:'saveAttendanceBulk', rows}) });
-    toast('✅ บันทึกลง Google Sheets สำเร็จ!');
-  } catch(e) { toast('❌ เกิดข้อผิดพลาด'); }
-}
 
 
 // =========== REPORT SYSTEM (ใหม่ 3 แท็บ) ===========
@@ -904,14 +908,14 @@ function setReportTab(tabName) {
   refreshReportView();
 }
 
-function refreshReportView() {
+async function refreshReportView() {
   const rid = document.getElementById('report-room').value;
-  
-  // โหลดรายชื่อเด็กใส่ Dropdown ในแท็บ "รายบุคคล" เผื่อไว้
+
   const studentSel = document.getElementById('report-student-select');
   if(rid && db.rooms[rid]) {
-    studentSel.innerHTML = '<option value="">-- เลือกรายชื่อนักเรียน --</option>' + 
+    studentSel.innerHTML = '<option value="">-- เลือกรายชื่อนักเรียน --</option>' +
       db.rooms[rid].students.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    await loadAllAttendanceForRoom(rid);
   } else {
     studentSel.innerHTML = '<option value="">-- เลือกรายชื่อนักเรียน --</option>';
   }
@@ -1116,30 +1120,134 @@ function loadSettingsPage() {
   const t = db.teachers[currentTeacherId];
   document.getElementById('set-teacher-name').value = t.name;
   document.getElementById('set-teacher-pin').value = t.pin;
-  document.getElementById('sheet-url').value = db.settings.sheetUrl || '';
+  const adminCard = document.getElementById('admin-users-card');
+  if(isAdminUser()) {
+    adminCard.style.display = 'block';
+    renderAdminUsersTable();
+  } else {
+    adminCard.style.display = 'none';
+  }
+  setDbStatus(true);
 }
 
-function updateTeacherProfile() {
+async function updateTeacherProfile() {
   const name = document.getElementById('set-teacher-name').value.trim();
   const pin = document.getElementById('set-teacher-pin').value.trim();
   if(!name || pin.length !== 4) return toast('ข้อมูลไม่ถูกต้อง (PIN ต้อง 4 หลัก)');
-  db.teachers[currentTeacherId].name = name; db.teachers[currentTeacherId].pin = pin; save();
-  document.getElementById('nav-teacher-name').textContent = "อ." + name; toast('อัปเดตข้อมูลส่วนตัวแล้ว');
+  const { error } = await _supabase.from('teachers').update({ name, pin }).eq('id', currentTeacherId);
+  if(error) return toast('❌ อัปเดตไม่สำเร็จ: ' + error.message);
+  db.teachers[currentTeacherId].name = name;
+  db.teachers[currentTeacherId].pin = pin;
+  document.getElementById('nav-teacher-name').textContent = "อ." + name;
+  toast('อัปเดตข้อมูลส่วนตัวแล้ว');
 }
 
-function toggleAdminSettings() {
-  const pass = prompt('กรุณาใส่รหัสผ่านแอดมิน (รหัสเริ่มต้น: admin หรือ 1234)');
-  if(pass === 'admin' || pass === '1234') {
-    document.getElementById('admin-settings-content').style.display = 'block';
-    document.getElementById('btn-unlock-admin').style.display = 'none';
-    toast('✅ ปลดล็อกการตั้งค่า Admin แล้ว');
-  } else if (pass !== null) {
-    toast('❌ รหัสผ่านไม่ถูกต้อง');
+function renderAdminUsersTable() {
+  const body = document.getElementById('admin-users-body');
+  if(!body) return;
+  const users = Object.values(db.teachers).sort((a,b) => a.name.localeCompare(b.name, 'th'));
+  body.innerHTML = users.map(t => {
+    const role = normalizeRole(t);
+    const roomCount = Object.values(db.rooms).filter(r => r.teacherId === t.id).length;
+    const canDelete = t.id !== currentTeacherId;
+    return `
+      <tr>
+        <td>
+          <input type="text" id="admin-name-${t.id}" value="${t.name.replace(/"/g,'&quot;')}" style="padding:8px 10px;">
+          <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">ห้องในความดูแล: ${roomCount} ห้อง</div>
+        </td>
+        <td>
+          <select id="admin-role-${t.id}" style="padding:8px 10px;">
+            <option value="teacher" ${role === 'teacher' ? 'selected' : ''}>อาจารย์</option>
+            <option value="admin" ${role === 'admin' ? 'selected' : ''}>แอดมิน</option>
+          </select>
+        </td>
+        <td>
+          <input type="password" id="admin-pin-${t.id}" maxlength="4" value="${(t.pin || '').replace(/"/g,'&quot;')}" style="padding:8px 10px;">
+        </td>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-primary btn-sm" onclick="adminSaveUser('${t.id}')">บันทึก</button>
+          <button class="btn btn-danger btn-sm" ${canDelete ? '' : 'disabled'} onclick="adminDeleteUser('${t.id}')">ลบ</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function adminCreateUser() {
+  if(!isAdminUser()) return toast('ไม่มีสิทธิ์ใช้งานส่วนนี้');
+  const name = document.getElementById('admin-new-name').value.trim();
+  const pin = document.getElementById('admin-new-pin').value.trim();
+  const role = document.getElementById('admin-new-role').value;
+  if(!name || pin.length !== 4) return toast('กรุณากรอกชื่อและ PIN 4 หลักให้ถูกต้อง');
+
+  const id = 't_' + Date.now();
+  const { error } = await _supabase.from('teachers').insert({ id, name, pin, role });
+  if(error) return toast('❌ เพิ่มผู้ใช้ไม่สำเร็จ: ' + error.message);
+
+  db.teachers[id] = { id, name, pin, role };
+  document.getElementById('admin-new-name').value = '';
+  document.getElementById('admin-new-pin').value = '';
+  document.getElementById('admin-new-role').value = 'teacher';
+  renderAdminUsersTable();
+  showLogin();
+  toast('✅ เพิ่มผู้ใช้เรียบร้อย');
+}
+
+async function adminSaveUser(teacherId) {
+  if(!isAdminUser()) return toast('ไม่มีสิทธิ์ใช้งานส่วนนี้');
+  const name = document.getElementById(`admin-name-${teacherId}`).value.trim();
+  const pin = document.getElementById(`admin-pin-${teacherId}`).value.trim();
+  const role = document.getElementById(`admin-role-${teacherId}`).value;
+  if(!name || pin.length !== 4) return toast('ชื่อหรือ PIN ไม่ถูกต้อง (PIN ต้อง 4 หลัก)');
+
+  if(teacherId === currentTeacherId && role !== 'admin') {
+    return toast('ไม่สามารถลดสิทธิ์แอดมินของตัวเองได้');
   }
+
+  if(normalizeRole(db.teachers[teacherId]) === 'admin' && role !== 'admin') {
+    const adminCount = Object.values(db.teachers).filter(t => normalizeRole(t) === 'admin').length;
+    if(adminCount <= 1) return toast('ต้องมีแอดมินอย่างน้อย 1 คน');
+  }
+
+  const { error } = await _supabase.from('teachers').update({ name, pin, role }).eq('id', teacherId);
+  if(error) return toast('❌ บันทึกไม่สำเร็จ: ' + error.message);
+
+  db.teachers[teacherId] = { ...db.teachers[teacherId], name, pin, role };
+  if(teacherId === currentTeacherId) {
+    document.getElementById('set-teacher-name').value = name;
+    document.getElementById('set-teacher-pin').value = pin;
+    document.getElementById('nav-teacher-name').textContent = "อ." + name;
+  }
+  renderAdminUsersTable();
+  toast('✅ อัปเดตข้อมูลผู้ใช้เรียบร้อย');
 }
 
-function saveGlobalSettings() {
-  db.settings.sheetUrl = document.getElementById('sheet-url').value.trim(); save(); toast('บันทึกการตั้งค่าระบบแล้ว');
+async function adminDeleteUser(teacherId) {
+  if(!isAdminUser()) return toast('ไม่มีสิทธิ์ใช้งานส่วนนี้');
+  if(teacherId === currentTeacherId) return toast('ไม่สามารถลบบัญชีที่กำลังใช้งานอยู่');
+
+  const user = db.teachers[teacherId];
+  if(!user) return;
+
+  const assignedRooms = Object.values(db.rooms).filter(r => r.teacherId === teacherId);
+  if(assignedRooms.length > 0) {
+    return toast('ลบไม่ได้: ผู้ใช้นี้ยังมีห้องในความดูแล กรุณาย้าย/ลบห้องก่อน');
+  }
+
+  if(normalizeRole(user) === 'admin') {
+    const adminCount = Object.values(db.teachers).filter(t => normalizeRole(t) === 'admin').length;
+    if(adminCount <= 1) return toast('ไม่สามารถลบแอดมินคนสุดท้ายได้');
+  }
+
+  if(!confirm(`ยืนยันการลบผู้ใช้ "${user.name}" ใช่หรือไม่?`)) return;
+  const { error } = await _supabase.from('teachers').delete().eq('id', teacherId);
+  if(error) return toast('❌ ลบไม่สำเร็จ: ' + error.message);
+
+  delete db.teachers[teacherId];
+  renderAdminUsersTable();
+  showLogin();
+  toast('🗑️ ลบผู้ใช้เรียบร้อย');
 }
 
 // Start
