@@ -759,6 +759,41 @@ async function deleteRoom(id) {
 
 function switchRoomTab(rid) { activeRoomTabId = rid; renderRooms(); }
 
+function startRenameRoom(rid, btn) {
+  const h3 = btn.closest('h3');
+  const nameSpan = h3.querySelector('span');
+  const currentName = nameSpan.textContent;
+  const newSpan = document.createElement('span');
+  newSpan.style.display = 'flex';
+  newSpan.style.alignItems = 'center';
+  newSpan.style.gap = '6px';
+  newSpan.innerHTML = `
+    <input id="rename-input-${rid}" value="${currentName}"
+      style="font-size:15px; padding:4px 10px; border:1.5px solid var(--green); border-radius:8px; width:160px; font-family:inherit; outline:none;">
+    <button class="btn btn-primary btn-sm" onclick="confirmRenameRoom('${rid}')">✔ บันทึก</button>
+    <button class="btn btn-sm" style="background:#f5f5f5; color:var(--text-muted); border:1px solid var(--border);" onclick="renderRooms()">ยกเลิก</button>
+  `;
+  nameSpan.replaceWith(newSpan);
+  btn.style.display = 'none';
+  const input = document.getElementById('rename-input-' + rid);
+  input.focus();
+  input.select();
+  input.addEventListener('keydown', e => { if(e.key === 'Enter') confirmRenameRoom(rid); if(e.key === 'Escape') renderRooms(); });
+}
+
+async function confirmRenameRoom(rid) {
+  const input = document.getElementById('rename-input-' + rid);
+  if (!input) return;
+  const newName = input.value.trim();
+  if (!newName) return toast('⚠️ กรุณาระบุชื่อห้อง');
+  if (newName === db.rooms[rid].name) return renderRooms();
+  const { error } = await _supabase.from('rooms').update({ name: newName }).eq('id', rid);
+  if (error) return toast('❌ แก้ไขชื่อห้องไม่สำเร็จ: ' + error.message);
+  db.rooms[rid].name = newName;
+  toast('✅ แก้ไขชื่อห้องเรียบร้อย');
+  renderRooms();
+}
+
 function renderRooms() {
   const tabsEl = document.getElementById('rooms-tabs-container');
   const contentEl = document.getElementById('rooms-content-container');
@@ -783,7 +818,11 @@ function renderRooms() {
   contentEl.innerHTML = `
     <div class="card" style="border-top: 4px solid var(--green);">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-        <h3 style="margin:0; font-size:18px;">จัดการนักเรียนห้อง: <span style="color:var(--green)">${activeRoom.name}</span></h3>
+        <h3 style="margin:0; font-size:18px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          จัดการนักเรียนห้อง: <span style="color:var(--green)">${activeRoom.name}</span>
+          <button class="btn btn-sm" style="background:var(--green-light); color:var(--green-dark); border:1px solid var(--green); font-size:13px;" 
+            onclick="startRenameRoom('${activeRoom.id}', this)">✏️ แก้ไขชื่อ</button>
+        </h3>
         <button class="btn btn-danger btn-sm" onclick="deleteRoom('${activeRoom.id}')">🗑️ ลบห้องนี้ทิ้ง</button>
       </div>
 
